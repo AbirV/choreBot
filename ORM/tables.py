@@ -1,6 +1,7 @@
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy import *
+from datetime import datetime
 
 
 Base = declarative_base()
@@ -27,7 +28,7 @@ class Person(Base):
     name = Column(String(length=30), unique=True)
 
 
-class Assignments(Base):
+class Assignment(Base):
     __tablename__ = 'assignments'
     id = Column(Integer, primary_key=True)
     chore_id = Column(Integer, ForeignKey('chores.id'))
@@ -35,5 +36,6 @@ class Assignments(Base):
     person_id = Column(Integer, ForeignKey('person.id'))
     person = relationship("Person")
 
-    assignmentDate = Column(DateTime)
+    assignmentDate = Column(DateTime, default=datetime.utcnow())
     completionDate = Column(DateTime)
+    lastReminder = Column(DateTime, default=datetime.utcnow())

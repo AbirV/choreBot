@@ -1,11 +1,12 @@
 import discord
 import sqlalchemy.orm
 import sqlalchemy.exc
+from datetime import datetime, timedelta
 from asyncio import sleep
 from discord.ext import commands
 from discord.ext.commands import Cog
 from lib.util import parse_args
-from ORM.tables import Chore, Person
+from ORM.tables import Chore, Person, Assignment
 
 
 async def param_none_error_check(ctx: discord.ext.commands.context, params: dict, param: str, msg: str = "") -> bool:
@@ -32,14 +33,38 @@ class ChoresCog(Cog):
 
     async def assign_chore(self):
         await self.bot.wait_until_ready()
+        session = self.session
 
         print("loop test begun")
         while not self.bot.is_closed():
             # 3600 second sleep for 1 hour
             await sleep(15)
-            print("sleep passed")
-            # await self.channel.send("sleep test passed.")
+
+            try:
+                active_assignments: sqlalchemy.orm.query = session.query(Assignment.chore_id).filter(
+                    Assignment.assignmentDate <= datetime.utcnow() and
+                    Assignment.completionDate.is_(None)
+                )
+            except sqlalchemy.orm.exc.NoResultFound:
+                active_assignments = sqlalchemy.orm.query
+
+            chores_to_assign: sqlalchemy.orm.query = session.query(Chore).filter(
+                Chore.id.notin_(active_assignments)
+            )
+
+            for chore_to_assign in chores_to_assign.all():
+                t = None
+
             break
+
+    async def chore_reminder(self):
+        await self.bot.wait_until_ready()
+
+        while not self.bot.is_closed():
+            q = self.session.query(Assignment).filter(
+                Assignment.assignmentDate <= datetime.utcnow() and
+                Assignment.completionDate.is_(None) and
+                Assignment.lastReminder <= (datetime.utcnow() - timedelta(days=Assignment.chore.frequency)))
 
     @commands.command(name='alive', description='Ask if H.E.L.P.eR. is alive.', aliases=['test'])
     async def c_test(self, ctx: discord.ext.commands.Context):
