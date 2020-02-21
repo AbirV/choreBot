@@ -41,9 +41,6 @@ class ChoresCog(Cog):
         session = self.session
 
         while not self.bot.is_closed():
-            # 3600 second sleep for 1 hour
-            await sleep(3600)
-
             a: Assignment = sqlalchemy.orm.aliased(Assignment)  # Alias Assignment table to 'a'
 
             # Query finds all chores, outer joining most recent Assignment of that chore.
@@ -138,14 +135,14 @@ class ChoresCog(Cog):
                             str(new_assignment.id) +
                             ")")
 
+            # 3600 second sleep for 1 hour
+            await sleep(3600)
+
     async def chore_reminder(self):
         await self.bot.wait_until_ready()
         session = self.session
 
         while not self.bot.is_closed():
-            # 3600 second sleep for 1 hour
-            await sleep(3600)
-
             # reminderdate = datetime.utcnow() - timedelta(days=Assignment.chore.frequency)
             q = session.query(Assignment).filter(
                 Assignment.assignmentDate <= datetime.utcnow(),
@@ -165,6 +162,9 @@ class ChoresCog(Cog):
                     # Save the reminder
                     assignment.lastReminder = datetime.utcnow()
                     session.commit()
+
+            # 3600 second sleep for 1 hour
+            await sleep(3600)
 
     @commands.command(name='alive', description='Ask if H.E.L.P.eR. is alive.', aliases=['test'])
     async def c_test(self, ctx: discord.ext.commands.Context):

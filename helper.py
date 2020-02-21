@@ -4,7 +4,6 @@ from sqlalchemy.orm import sessionmaker
 import sqlalchemy.orm
 import sqlalchemy
 
-
 bot = commands.Bot(command_prefix="!")
 token = open("resources/APIKey.txt", "r").readline()
 channel = int(open("resources/Channel.txt", "r").readline())
