@@ -16,7 +16,7 @@ async def on_ready():
     import ORM.tables as tables
     print("SQLAlchemy Version: {}".format(sqlalchemy.__version__))  # Mostly for debug if necessary
 
-    engine = sqlalchemy.create_engine(open("resources/mysqlEngine.txt", "r").readline(), pool_recycle=3600, echo=True)
+    engine = sqlalchemy.create_engine(open("resources/mysqlEngine.txt", "r").readline(), pool_recycle=3600, echo=False)
     engine.execute("CREATE DATABASE IF NOT EXISTS helper")
     engine.execute("USE helper")
 

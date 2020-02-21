@@ -34,8 +34,10 @@ class Assignment(Base):
     chore_id = Column(Integer, ForeignKey('chores.id'))
     chore = relationship("Chore")
     person_id = Column(Integer, ForeignKey('person.id'))
-    person = relationship("Person")
+    person = relationship("Person", foreign_keys=[person_id])
 
     assignmentDate = Column(DateTime, default=datetime.utcnow())
     completionDate = Column(DateTime)
+    completedBy_id = Column(Integer, ForeignKey('person.id'))
+    completedBy = relationship("Person", foreign_keys=[completedBy_id])
     lastReminder = Column(DateTime, default=datetime.utcnow())
