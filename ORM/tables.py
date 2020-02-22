@@ -1,11 +1,13 @@
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.schema import MetaData
 from sqlalchemy.orm import relationship
 from sqlalchemy import *
 from datetime import datetime
 
 
 Base = declarative_base()
-meta = Base.metadata
+meta: MetaData = Base.metadata
+meta.schema = 'helper'
 
 people_chore_association = Table('peoplechoreassociation', meta,
                                  Column('chore_id', Integer, ForeignKey('chores.id')),

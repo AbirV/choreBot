@@ -17,7 +17,7 @@ async def on_ready():
 
     engine = sqlalchemy.create_engine(open("resources/mysqlEngine.txt", "r").readline(), pool_recycle=3600, echo=False)
     engine.execute("CREATE DATABASE IF NOT EXISTS helper")
-    engine.execute("USE helper")
+    # engine.execute("USE helper")
 
     tables.meta.create_all(bind=engine)
 
