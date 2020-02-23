@@ -5,11 +5,10 @@ from random import choice
 from sqlalchemy.sql.functions import func
 from sqlalchemy.sql.expression import or_
 from datetime import datetime, timedelta
-from asyncio import sleep
 from discord.ext import commands
 from discord.ext.commands import Cog
 
-from lib.util import parse_args
+from lib.util import parse_args, sync_time
 from ORM.tables import Chore, Person, Assignment
 
 
@@ -54,7 +53,6 @@ class ChoresCog(Cog):
                 a.id is null
             '''
             chore_assignment_unique = session.query(Chore, a).join(a, isouter=True).filter(
-
                 or_(
                     a.id == session.query(func.max(Assignment.id)).filter(
                         Assignment.chore_id == a.chore_id
@@ -78,22 +76,24 @@ class ChoresCog(Cog):
                     persons = []
                     # create a list of people who can do this chore.
                     for p in chore.validPersons:
-                        print(p.id)
                         persons.append(p.id)
 
-                    # choose the next person to do the chore. Make sure to exclude last person who did it.
-                    '''
-                    select * from person p where
-                        p.id in (\\external list of valid persons\\) 
-                        and
-                        p.id != \\prior assignment\\.person.id
-                    '''
-                    next_person = choice(
-                        session.query(Person).filter(
-                            Person.id.in_(persons),
-                            Person.id != assignment.person_id
-                        ).all()
-                    )
+                    if len(persons) == 1:
+                        next_person = choice(session.query(Person).filter(Person.id.in_(persons)).all())
+                    else:
+                        # choose the next person to do the chore. Make sure to exclude last person who did it.
+                        '''
+                        select * from person p where
+                            p.id in (\\external list of valid persons\\) 
+                            and
+                            p.id != \\prior assignment\\.person.id
+                        '''
+                        next_person = choice(
+                            session.query(Person).filter(
+                                Person.id.in_(persons),
+                                Person.id != assignment.completedBy_id
+                            ).all()
+                        )
                 elif assignment is None:
                     # in this case, create a list of all people who can do this chore
                     persons = []
@@ -135,15 +135,13 @@ class ChoresCog(Cog):
                             str(new_assignment.id) +
                             ")")
 
-            # 3600 second sleep for 1 hour
-            await sleep(3600)
+            await sync_time(10, "assign_chore")
 
     async def chore_reminder(self):
         await self.bot.wait_until_ready()
         session = self.session
 
         while not self.bot.is_closed():
-            # reminderdate = datetime.utcnow() - timedelta(days=Assignment.chore.frequency)
             q = session.query(Assignment).filter(
                 Assignment.assignmentDate <= datetime.utcnow(),
                 Assignment.completionDate.is_(None)
@@ -151,27 +149,25 @@ class ChoresCog(Cog):
             for assignment in q:
                 if assignment.lastReminder <= datetime.utcnow() - timedelta(days=assignment.chore.frequency):
                     # send reminder
-                    await self.channel.send(content=
-                                            str(assignment.person.name) +
+                    await self.channel.send(content=str(assignment.person.name) +
                                             "! Remember, you have to do " +
                                             assignment.chore.choreName +
                                             " (ID: " +
-                                            str(assignment.chore.id) +
+                                            str(assignment.id) +
                                             ")!"
                                             )
                     # Save the reminder
                     assignment.lastReminder = datetime.utcnow()
                     session.commit()
 
-            # 3600 second sleep for 1 hour
-            await sleep(3600)
+            await sync_time(10, "chore_reminder")
 
     @commands.command(name='alive', description='Ask if H.E.L.P.eR. is alive.', aliases=['test'])
     async def c_test(self, ctx: discord.ext.commands.Context):
         print("Cog test received, sending message.")
         if ctx.message.channel == self.channel:
             message = 'I\'m alive ' + ctx.message.author.mention
-            await ctx.send(content=message)
+            await self.channel.send(content=message)
         return
 
     @commands.command(name='new_chore', description="Add a new chore.", aliases=['new'],
@@ -200,9 +196,9 @@ class ChoresCog(Cog):
         '''
         for key, value in params.items():
             if value is str:
-                await ctx.send(content="Key = " + key + " Val = " + value)
+                await self.channel.send(content="Key = " + key + " Val = " + value)
             else:
-                await ctx.send(content="Key = " + key + " Val = " + str(value))
+                await self.channel.send(content="Key = " + key + " Val = " + str(value))
         '''
         err = False
         if await param_none_error_check(ctx, params, 'chore',
@@ -232,11 +228,11 @@ class ChoresCog(Cog):
         if isinstance(params['valid people'], list):
             for i in range(len(params['valid people'])):
                 if not params['valid people'][i].startswith('<@'):
-                    await ctx.send(content=errcheckmsg)
+                    await self.channel.send(content=errcheckmsg)
                     return
         else:
             if not params['valid people'].startswith('<@!'):
-                await ctx.send(content=errcheckmsg)
+                await self.channel.send(content=errcheckmsg)
                 return
 
         # Ensure people passed in exist in DB.
@@ -253,7 +249,7 @@ class ChoresCog(Cog):
                     person.name = params['valid people'][i]
                     people.append(self.query_and_add_person(person))
         except sqlalchemy.exc.SQLAlchemyError:
-            await ctx.send("Something went wrong! Couldn't validate tagged people for database!")
+            await self.channel.send("Something went wrong! Couldn't validate tagged people for database!")
             return
 
         chore = Chore()
@@ -268,9 +264,9 @@ class ChoresCog(Cog):
             self.session.add(chore)
             self.session.commit()
         except sqlalchemy.exc.SQLAlchemyError:
-            await ctx.send("Something went wrong!")
+            await self.channel.send("Something went wrong!")
             return
-        await ctx.send("Successfully added Chore!")
+        await self.channel.send("Successfully added Chore!")
 
         return
 
@@ -282,15 +278,15 @@ class ChoresCog(Cog):
                             "!finished_chore -name={exact chore name} \r\n"
                             "Note: only use -name flag if the name is unique!")
     async def finished_chore(self, ctx: discord.ext.commands.Context):
-        param: str = ctx.message.content[len(ctx.invoked_with) + 1:].lstrip()
+        param = ctx.message.content[len(ctx.invoked_with) + 1:].lstrip()
         sender = ctx.author.mention
 
         if param.find('-') == -1:
             try:
                 param = int(param)
             except ValueError:
-                await ctx.send(content="Improper usage of this command! Please use '!help finished_chore' "
-                                       "for instructions.")
+                await self.channel.send(content="Improper usage of this command! Please use '!help finished_chore' "
+                                                "for instructions.")
                 return
 
             q: list = self.session.query(Assignment).filter(
@@ -299,20 +295,20 @@ class ChoresCog(Cog):
             ).all()
 
             if len(q) == 0:
-                await ctx.send(content="No chore of that ID, or that chore is already complete!")
+                await self.channel.send(content="No chore of that ID, or that chore is already complete!")
                 return
             if len(q) > 1:
                 # What. This should literally never happen.
-                await ctx.send(content="That ID gave more than one result! This doesn't make sense! \r\n"
-                                       "<@!190676919212179456>, learn how to program!")
+                await self.channel.send(content="That ID gave more than one result! This doesn't make sense! \r\n"
+                                                "<@!190676919212179456>, learn how to program!")
                 return
             for assignment in q:
                 if sender != assignment.person.name:
-                    await ctx.send(content="Hey " +
-                                   str(assignment.person.name) +
-                                   ", make sure to thank " +
-                                   str(sender) +
-                                   " for doing your chore!")
+                    await self.channel.send(content="Hey " +
+                                                    str(assignment.person.name) +
+                                                    ", make sure to thank " +
+                                                    str(sender) +
+                                                    " for doing your chore!")
                 person = Person()
                 person.name = sender
                 q_person = self.query_and_add_person(person)
@@ -320,7 +316,12 @@ class ChoresCog(Cog):
                 assignment.completedBy = q_person
                 self.session.commit()
 
-                await ctx.send(content="Thanks for doing your part, " + str(sender))
+                await self.channel.send(content="Thanks for doing your part, " + str(sender))
+
+    @commands.command(hidden=True)
+    async def refresh_db(self, ctx):
+        self.session.expire_all()
+        await self.channel.send(content="Databases have been refreshed.")
 
     def query_and_add_person(self, person: Person):
         try:
@@ -330,3 +331,6 @@ class ChoresCog(Cog):
             self.session.add(person)
             self.session.commit()
         return self.session.query(Person).filter(Person.name == person.name).one()
+
+    def refresh_db_internal(self):
+        self.session.expire_all()
