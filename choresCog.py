@@ -111,6 +111,8 @@ class ChoresCog(Cog):
                 new_assignment.person = next_person
                 new_assignment.chore = chore
                 new_assignment.completionDate = None
+                new_assignment.lastReminder = datetime.utcnow()
+                new_assignment.assignmentDate = datetime.utcnow()
 
                 # Add the new assignment to the database.
                 try:
