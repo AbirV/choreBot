@@ -37,7 +37,6 @@ class ChoresCog(Cog):
 
     async def assign_chore(self):
         await self.bot.wait_until_ready()
-        session = self.session
 
         while not self.bot.is_closed():
             a: Assignment = sqlalchemy.orm.aliased(Assignment)  # Alias Assignment table to 'a'
@@ -52,9 +51,9 @@ class ChoresCog(Cog):
                 or 
                 a.id is null
             '''
-            chore_assignment_unique = session.query(Chore, a).join(a, isouter=True).filter(
+            chore_assignment_unique = self.session.query(Chore, a).join(a, isouter=True).filter(
                 or_(
-                    a.id == session.query(func.max(Assignment.id)).filter(
+                    a.id == self.session.query(func.max(Assignment.id)).filter(
                         Assignment.chore_id == a.chore_id
                     ),
                     a.id.is_(None)
@@ -79,7 +78,7 @@ class ChoresCog(Cog):
                         persons.append(p.id)
 
                     if len(persons) == 1:
-                        next_person = choice(session.query(Person).filter(Person.id.in_(persons)).all())
+                        next_person = choice(self.session.query(Person).filter(Person.id.in_(persons)).all())
                     else:
                         # choose the next person to do the chore. Make sure to exclude last person who did it.
                         '''
@@ -89,7 +88,7 @@ class ChoresCog(Cog):
                             p.id != \\prior assignment\\.person.id
                         '''
                         next_person = choice(
-                            session.query(Person).filter(
+                            self.session.query(Person).filter(
                                 Person.id.in_(persons),
                                 Person.id != assignment.completedBy_id
                             ).all()
@@ -100,7 +99,7 @@ class ChoresCog(Cog):
                     for p in chore.validPersons:
                         persons.append(p.id)
                     # choose who will do this chore next
-                    next_person = choice(session.query(Person).filter(Person.id.in_(persons)).all())
+                    next_person = choice(self.session.query(Person).filter(Person.id.in_(persons)).all())
 
                 # if there is no next person, pass this loop
                 if next_person.name is None:
@@ -116,8 +115,8 @@ class ChoresCog(Cog):
 
                 # Add the new assignment to the database.
                 try:
-                    session.add(new_assignment)
-                    session.commit()
+                    self.session.add(new_assignment)
+                    self.session.commit()
                 except sqlalchemy.exc.SQLAlchemyError as e:
                     # This will normally indicate a system error like the SQL server not running.
                     await self.channel.send(
@@ -141,10 +140,9 @@ class ChoresCog(Cog):
 
     async def chore_reminder(self):
         await self.bot.wait_until_ready()
-        session = self.session
 
         while not self.bot.is_closed():
-            q = session.query(Assignment).filter(
+            q = self.session.query(Assignment).filter(
                 Assignment.assignmentDate <= datetime.utcnow(),
                 Assignment.completionDate.is_(None)
             ).all()
@@ -160,7 +158,7 @@ class ChoresCog(Cog):
                                             )
                     # Save the reminder
                     assignment.lastReminder = datetime.utcnow()
-                    session.commit()
+                    self.session.commit()
 
             await sync_time(10, "chore_reminder")
 
