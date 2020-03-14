@@ -5,7 +5,7 @@ from random import choice
 from sqlalchemy.sql.functions import func
 from sqlalchemy.sql.expression import or_
 from datetime import datetime, timedelta
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ext.commands import Cog
 
 from lib.util import parse_args, sync_time
@@ -32,135 +32,148 @@ class ChoresCog(Cog):
         self.bot = bot
         self.channel = self.bot.get_channel(channel)
         self.session = session
-        bot.loop.create_task(self.assign_chore())
-        bot.loop.create_task(self.chore_reminder())
+        self.assign_chore.start()
+        self.chore_reminder.start()
 
+    @tasks.loop(hours=1)
+    async def check_loops(self):
+        if self.assign_chore.failed():
+            self.assign_chore.restart()
+            print("Restarting assign_chore loop due to failure!")
+        if self.chore_reminder.failed():
+            self.chore_reminder.restart()
+            print("Restarting chore_reminder loop due to failure!")
+
+    @tasks.loop(minutes=10)
     async def assign_chore(self):
         await self.bot.wait_until_ready()
 
-        while not self.bot.is_closed():
-            a: Assignment = sqlalchemy.orm.aliased(Assignment)  # Alias Assignment table to 'a'
+        print("Running assign_chore loop.")
 
-            # Query finds all chores, outer joining most recent Assignment of that chore.
-            # Should allow us to check if a chore is due for reassignment.
-            '''
-            select * from chores 
-            left outer join assignments a on a.chore_id = chores.id
-            where
-                a.id = (select max(b.id) from assignments b where b.chore_id = a.chore_id)
-                or 
-                a.id is null
-            '''
-            chore_assignment_unique = self.session.query(Chore, a).join(a, isouter=True).filter(
-                or_(
-                    a.id == self.session.query(func.max(Assignment.id)).filter(
-                        Assignment.chore_id == a.chore_id
-                    ),
-                    a.id.is_(None)
-                )
+        a: Assignment = sqlalchemy.orm.aliased(Assignment)  # Alias Assignment table to 'a'
+
+        # Query finds all chores, outer joining most recent Assignment of that chore.
+        # Should allow us to check if a chore is due for reassignment.
+        '''
+        select * from chores 
+        left outer join assignments a on a.chore_id = chores.id
+        where
+            a.id = (select max(b.id) from assignments b where b.chore_id = a.chore_id)
+            or 
+            a.id is null
+        '''
+        chore_assignment_unique = self.session.query(Chore, a).join(a, isouter=True).filter(
+            or_(
+                a.id == self.session.query(func.max(Assignment.id)).filter(
+                    Assignment.chore_id == a.chore_id
+                ),
+                a.id.is_(None)
             )
+        )
 
-            # for each row returned in prior query
-            for row in chore_assignment_unique:
-                chore: Chore = row[0]
-                assignment: Assignment = row[1]
-                next_person: Person = Person()
+        # for each row returned in prior query
+        for row in chore_assignment_unique:
+            chore: Chore = row[0]
+            assignment: Assignment = row[1]
+            next_person: Person = Person()
 
-                # check for chore frequency last chore completion to be long enough ago that it's past the freq.
-                if assignment is not None and \
-                        assignment.completionDate is not None and \
-                        assignment.completionDate <= (datetime.utcnow() - timedelta(days=chore.frequency)):
-                    #     Recorded completion  before or on       now   - (frequency) days
+            # check for chore frequency last chore completion to be long enough ago that it's past the freq.
+            if assignment is not None and \
+                    assignment.completionDate is not None and \
+                    assignment.completionDate <= (datetime.utcnow() - timedelta(days=chore.frequency)):
+                #     Recorded completion  before or on       now   - (frequency) days
 
-                    persons = []
-                    # create a list of people who can do this chore.
-                    for p in chore.validPersons:
-                        persons.append(p.id)
+                persons = []
+                # create a list of people who can do this chore.
+                for p in chore.validPersons:
+                    persons.append(p.id)
 
-                    if len(persons) == 1:
-                        next_person = choice(self.session.query(Person).filter(Person.id.in_(persons)).all())
-                    else:
-                        # choose the next person to do the chore. Make sure to exclude last person who did it.
-                        '''
-                        select * from person p where
-                            p.id in (\\external list of valid persons\\) 
-                            and
-                            p.id != \\prior assignment\\.person.id
-                        '''
-                        next_person = choice(
-                            self.session.query(Person).filter(
-                                Person.id.in_(persons),
-                                Person.id != assignment.completedBy_id
-                            ).all()
-                        )
-                elif assignment is None:
-                    # in this case, create a list of all people who can do this chore
-                    persons = []
-                    for p in chore.validPersons:
-                        persons.append(p.id)
-                    # choose who will do this chore next
+                if len(persons) == 1:
                     next_person = choice(self.session.query(Person).filter(Person.id.in_(persons)).all())
+                else:
+                    # choose the next person to do the chore. Make sure to exclude last person who did it.
+                    '''
+                    select * from person p where
+                        p.id in (\\external list of valid persons\\) 
+                        and
+                        p.id != \\prior assignment\\.person.id
+                    '''
+                    next_person = choice(
+                        self.session.query(Person).filter(
+                            Person.id.in_(persons),
+                            Person.id != assignment.completedBy_id
+                        ).all()
+                    )
+            elif assignment is None:
+                # in this case, create a list of all people who can do this chore
+                persons = []
+                for p in chore.validPersons:
+                    persons.append(p.id)
+                # choose who will do this chore next
+                next_person = choice(self.session.query(Person).filter(Person.id.in_(persons)).all())
 
-                # if there is no next person, pass this loop
-                if next_person.name is None:
-                    continue
+            # if there is no next person, pass this loop
+            if next_person.name is None:
+                continue
 
-                # create a new assignment
-                new_assignment = Assignment()
-                new_assignment.person = next_person
-                new_assignment.chore = chore
-                new_assignment.completionDate = None
-                new_assignment.lastReminder = datetime.utcnow()
-                new_assignment.assignmentDate = datetime.utcnow()
+            # create a new assignment
+            new_assignment = Assignment()
+            new_assignment.person = next_person
+            new_assignment.chore = chore
+            new_assignment.completionDate = None
+            new_assignment.lastReminder = datetime.utcnow()
+            new_assignment.assignmentDate = datetime.utcnow()
 
-                # Add the new assignment to the database.
-                try:
-                    self.session.add(new_assignment)
-                    self.session.commit()
-                except sqlalchemy.exc.SQLAlchemyError as e:
-                    # This will normally indicate a system error like the SQL server not running.
-                    await self.channel.send(
-                        content="<@!190676919212179456>! Big error, very scary. Couldn't assign a chore!"
-                                "\r\n"
-                                "Chore: " + str(chore.choreName) + "\r\n"
-                                                                   "Person: " + next_person.name)
-                    await self.channel.send(content=e)
-                    continue
-                # Notify the person of their chore assignment.
+            # Add the new assignment to the database.
+            try:
+                self.session.add(new_assignment)
+                self.session.commit()
+            except sqlalchemy.exc.SQLAlchemyError as e:
+                # This will normally indicate a system error like the SQL server not running.
                 await self.channel.send(
-                    content="Hey, " +
-                            str(new_assignment.person.name) +
-                            " you have been assigned to do " +
-                            new_assignment.chore.choreName +
-                            " (ID: " +
-                            str(new_assignment.id) +
-                            ")")
+                    content="<@!190676919212179456>! Big error, very scary. Couldn't assign a chore!"
+                            "\r\n"
+                            "Chore: " + str(chore.choreName) + "\r\n"
+                                                               "Person: " + next_person.name)
+                await self.channel.send(content=e)
+                continue
+            # Notify the person of their chore assignment.
+            await self.channel.send(
+                content="Hey, " +
+                        str(new_assignment.person.name) +
+                        " you have been assigned to do " +
+                        new_assignment.chore.choreName +
+                        " (ID: " +
+                        str(new_assignment.id) +
+                        ")")
 
-            await sync_time(10, "assign_chore")
+        await sync_time(10, "assign_chore")
 
+    @tasks.loop(minutes=10)
     async def chore_reminder(self):
         await self.bot.wait_until_ready()
 
-        while not self.bot.is_closed():
-            q = self.session.query(Assignment).filter(
-                Assignment.assignmentDate <= datetime.utcnow(),
-                Assignment.completionDate.is_(None)
-            ).all()
-            for assignment in q:
-                if assignment.lastReminder <= datetime.utcnow() - timedelta(days=assignment.chore.frequency):
-                    # send reminder
-                    await self.channel.send(content=str(assignment.person.name) +
-                                            "! Remember, you have to do " +
-                                            assignment.chore.choreName +
-                                            " (ID: " +
-                                            str(assignment.id) +
-                                            ")!"
-                                            )
-                    # Save the reminder
-                    assignment.lastReminder = datetime.utcnow()
-                    self.session.commit()
+        print("Running chore_reminder loop.")
 
-            await sync_time(10, "chore_reminder")
+        q = self.session.query(Assignment).filter(
+            Assignment.assignmentDate <= datetime.utcnow(),
+            Assignment.completionDate.is_(None)
+        ).all()
+        for assignment in q:
+            if assignment.lastReminder <= datetime.utcnow() - timedelta(days=assignment.chore.frequency):
+                # send reminder
+                await self.channel.send(content=str(assignment.person.name) +
+                                        "! Remember, you have to do " +
+                                        assignment.chore.choreName +
+                                        " (ID: " +
+                                        str(assignment.id) +
+                                        ")!"
+                                        )
+                # Save the reminder
+                assignment.lastReminder = datetime.utcnow()
+                self.session.commit()
+
+        await sync_time(10, "chore_reminder")
 
     @commands.command(name='alive', description='Ask if H.E.L.P.eR. is alive.', aliases=['test'])
     async def c_test(self, ctx: discord.ext.commands.Context):
@@ -321,7 +334,8 @@ class ChoresCog(Cog):
     @commands.command(hidden=True)
     async def refresh_db(self, ctx):
         self.session.expire_all()
-        await self.channel.send(content="Databases have been refreshed.")
+        self.session.close()
+        await self.channel.send(content="Databases have been refreshed. " + ctx.author.mention)
 
     def query_and_add_person(self, person: Person):
         try:

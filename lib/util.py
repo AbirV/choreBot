@@ -29,14 +29,9 @@ async def sync_time(minute: int, source: str) -> None:
     from datetime import datetime
 
     now = datetime.utcnow()
-    hadtosync = False
     while now.minute % minute != 0:
-        if now.second == 00 or not hadtosync:
+        if now.second == 00:
             print("Syncing time for {0}...    Current: {1}    Increment: {2}".format(source, now, minute))
-        hadtosync = True
         await sleep(1)
         now = datetime.utcnow()
 
-    if not hadtosync:
-        print("Sleeping for {0} seconds on {1}".format(minute * 60 - 1, source))
-        await sleep(minute * 60 - 1)
