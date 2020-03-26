@@ -2,6 +2,8 @@ import time
 
 from sqlalchemy.orm import sessionmaker
 import sqlalchemy
+import sys
+sys.path.append('../')
 from ORM.tables import Chore, Person, Assignment
 from sqlalchemy.sql.functions import func
 from sqlalchemy.sql.expression import or_
@@ -15,16 +17,17 @@ session_maker = sessionmaker(bind=engine)
 
 session = session_maker()
 
-while True:
+for _ in range(100):
     a: Assignment = sqlalchemy.orm.aliased(Assignment)  # Alias Assignment table to 'a'
 
     chore_assignment_unique = session.query(Chore, a).join(a, isouter=True).filter(
-        or_(
-            a.id == session.query(func.max(Assignment.id)).filter(
-                Assignment.chore_id == a.chore_id
-            ),
-            a.id.is_(None)
-        )
+        a.id == 40
+#        or_(
+#            a.id == session.query(func.max(Assignment.id)).filter(
+#                Assignment.chore_id == a.chore_id
+#            ),
+#            a.id.is_(None)
+#        )
     )
 
     for row in chore_assignment_unique:
@@ -37,7 +40,8 @@ while True:
             # assignment.completionDate is not None and \
             # assignment.completionDate <= (datetime.utcnow() - timedelta(days=chore.frequency)):
             #     Recorded completion  before or on       now   - (frequency) days
-
+            if chore.id == 1:
+                print("Prior assignment found for ", assignment.chore.choreName)
             persons = []
             # create a list of people who can do this chore.
             for p in chore.validPersons:
@@ -60,7 +64,13 @@ while True:
                     Person.id != assignment.completedBy_id
                 ).all()
                 next_person = next_person[random.randint(0, len(next_person) - 1)]
+
+            if chore.id == 1:
+                print("Last completed by: ", assignment.completedBy_id)
+                print(chore.choreName, "is next done by person with id", next_person.id)
         elif assignment is None:
+            if chore.id == 1: 
+                print("New assignment for", chore.choreName)
             # in this case, create a list of all people who can do this chore
             persons = []
             for p in chore.validPersons:
@@ -68,10 +78,9 @@ while True:
             # choose who will do this chore next
             next_person = session.query(Person).filter(Person.id.in_(persons)).all()
             next_person = next_person[random.randint(0, len(next_person) - 1)]
+            if chore.id == 1:
+                print(chore.choreName, "is next done by person with id", next_person.id)
 
         # if there is no next person, pass this loop
         if next_person.name is None:
             continue
-
-        print(next_person.name)
-    time.sleep(3)
