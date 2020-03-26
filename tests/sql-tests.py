@@ -1,12 +1,9 @@
-import time
-
 from sqlalchemy.orm import sessionmaker
 import sqlalchemy
 import sys
+
 sys.path.append('../')
 from ORM.tables import Chore, Person, Assignment
-from sqlalchemy.sql.functions import func
-from sqlalchemy.sql.expression import or_
 import random
 
 print("SQLAlchemy Version: {}".format(sqlalchemy.__version__))  # Mostly for debug if necessary
@@ -22,12 +19,12 @@ for _ in range(100):
 
     chore_assignment_unique = session.query(Chore, a).join(a, isouter=True).filter(
         a.id == 40
-#        or_(
-#            a.id == session.query(func.max(Assignment.id)).filter(
-#                Assignment.chore_id == a.chore_id
-#            ),
-#            a.id.is_(None)
-#        )
+        #        or_(
+        #            a.id == session.query(func.max(Assignment.id)).filter(
+        #                Assignment.chore_id == a.chore_id
+        #            ),
+        #            a.id.is_(None)
+        #        )
     )
 
     for row in chore_assignment_unique:
@@ -63,13 +60,15 @@ for _ in range(100):
                     Person.id.in_(persons),
                     Person.id != assignment.completedBy_id
                 ).all()
+                if chore.id == 1:
+                    print("Possible choices:", [i.id for i in next_person])
                 next_person = next_person[random.randint(0, len(next_person) - 1)]
 
             if chore.id == 1:
                 print("Last completed by: ", assignment.completedBy_id)
                 print(chore.choreName, "is next done by person with id", next_person.id)
         elif assignment is None:
-            if chore.id == 1: 
+            if chore.id == 1:
                 print("New assignment for", chore.choreName)
             # in this case, create a list of all people who can do this chore
             persons = []

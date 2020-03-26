@@ -90,7 +90,8 @@ class ChoresCog(Cog):
 
                 if len(persons) == 1:
                     next_person = self.session.query(Person).filter(Person.id.in_(persons)).all()
-                    next_person = next_person[random.randint(0, len(next_person) - 1)]
+                    next_person_index = random.randint(0, len(next_person) - 1)
+                    next_person = next_person[next_person_index]
 
                 else:
                     # choose the next person to do the chore. Make sure to exclude last person who did it.
@@ -104,7 +105,8 @@ class ChoresCog(Cog):
                             Person.id.in_(persons),
                             Person.id != assignment.completedBy_id
                         ).all()
-                    next_person = next_person[random.randint(0, len(next_person) - 1)]
+                    next_person_index = random.randint(0, len(next_person) - 1)
+                    next_person = next_person[next_person_index]
             elif assignment is None:
                 # in this case, create a list of all people who can do this chore
                 persons = []
@@ -112,7 +114,8 @@ class ChoresCog(Cog):
                     persons.append(p.id)
                 # choose who will do this chore next
                 next_person = self.session.query(Person).filter(Person.id.in_(persons)).all()
-                next_person = next_person[random.randint(0, len(next_person) - 1)]
+                next_person_index = random.randint(0, len(next_person) - 1)
+                next_person = next_person[next_person_index]
 
             # if there is no next person, pass this loop
             if next_person.name is None:
