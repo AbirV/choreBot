@@ -342,6 +342,55 @@ class ChoresCog(Cog):
         self.session.close()
         await self.channel.send(content="Databases have been refreshed. " + ctx.author.mention)
 
+    @commands.command(name="my_active",
+                      description="List all of your active chores.",
+                      aliases=["mine", "my_unfinished", "my_chores"],
+                      help="Get a list of all of your currently unfinished chores")
+    async def my_active(self, ctx):
+        person = Person()
+        person.name = ctx.author.mention
+        person = self.query_and_add_person(person)
+
+        active_chores = self.session.query(Assignment).filter(
+            Assignment.person == person,
+            Assignment.assignmentDate <= datetime.utcnow(),
+            Assignment.completionDate.is_(None)
+        ).all()
+
+        message = None
+        for assignment in active_chores:
+            if message:
+                message += "\r\n{} (ID: {})".format(assignment.chore.choreName,
+                                                    assignment.id)
+            else:
+                message = "{} (ID: {})".format(assignment.chore.choreName,
+                                               assignment.id)
+
+        await self.channel.send(content=message)
+
+    @commands.command(name="active",
+                      description="List all active chores.",
+                      aliases=["unfinished", "unfinished_chores"],
+                      help="Get a list of all currently unfinished chores")
+    async def active(self, ctx):
+        active_chores = self.session.query(Assignment).filter(
+            Assignment.assignmentDate <= datetime.utcnow(),
+            Assignment.completionDate.is_(None)
+        ).all()
+
+        message = None
+        for assignment in active_chores:
+            if message:
+                message += "\r\n{} (ID: {}) - assigned to: {}".format(assignment.chore.choreName,
+                                                                      assignment.id,
+                                                                      assignment.person.name)
+            else:
+                message = "{} (ID: {}) - assigned to: {}".format(assignment.chore.choreName,
+                                                                 assignment.id,
+                                                                 assignment.person.name)
+
+        await self.channel.send(content=message)
+
     def query_and_add_person(self, person: Person):
         try:
             person = self.session.query(Person) \
