@@ -26,7 +26,7 @@ async def on_ready():
     session = session_maker()
 
     # Add cogs
-    bot.add_cog(ChoresCog(bot, channel, session))
+    bot.add_cog(ChoresCog(bot, session))
 
     print("H.E.L.P.eR. ready")
 

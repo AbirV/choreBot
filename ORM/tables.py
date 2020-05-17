@@ -22,6 +22,7 @@ class Chore(Base):
     desc = Column(String(length=150))
     validPersons = relationship("Person", secondary=people_chore_association)
     frequency = Column(Integer)
+    channel = Column(String(length=18))
 
 
 class Person(Base):
