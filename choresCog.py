@@ -12,7 +12,10 @@ from lib.util import parse_args, sync_time
 from ORM.tables import Chore, Person, Assignment
 
 
-async def param_none_error_check(ctx: discord.ext.commands.context, params: dict, param: str, msg: str = "") -> bool:
+async def param_none_error_check(ctx: discord.ext.commands.context,
+                                 params: dict,
+                                 param: str,
+                                 msg: str = "") -> bool:
     if msg == "":
         msg = str.format("Missing parameter %s. <@!190676919212179456>, give this error a real message.", param)
     try:
@@ -187,7 +190,7 @@ class ChoresCog(Cog):
     @commands.command(name='alive', description='Ask if H.E.L.P.eR. is alive.', aliases=['test'])
     async def c_test(self, ctx: discord.ext.commands.Context):
         print("Cog test received, sending message.")
-        message = 'I\'m alive ' + ctx.message.author.mention
+        message = f'I\'m alive {ctx.message.author.mention}.'
         await ctx.message.channel.send(content=message)
 
     @commands.command(name='new_chore', description="Add a new chore.", aliases=['new'],
@@ -215,13 +218,7 @@ class ChoresCog(Cog):
         params: dict = parse_args(  # Parse command args into a dictionary
             # Content of command, with actual command stripped.
             ctx.message.content[len(ctx.invoked_with) + 1:].lstrip())  # Strip leading spaces just in case.
-        '''
-        for key, value in params.items():
-            if value is str:
-                await self.channel.send(content="Key = " + key + " Val = " + value)
-            else:
-                await self.channel.send(content="Key = " + key + " Val = " + str(value))
-        '''
+
         err = False
         if await param_none_error_check(ctx, params, 'chore',
                                         "You have to give me a name for the new chore! "
@@ -258,16 +255,15 @@ class ChoresCog(Cog):
                 return
 
         # Ensure people passed in exist in DB.
-        person = Person()
         people = []
         try:
             if not isinstance(params['valid people'], list):
+                person = Person()
                 person.name = params['valid people']
                 people.append(self.query_and_add_person(person))
             else:
                 for i in range(len(params['valid people'])):
                     person = Person()
-                    print(params['valid people'][i])
                     person.name = params['valid people'][i]
                     people.append(self.query_and_add_person(person))
         except sqlalchemy.exc.SQLAlchemyError:
@@ -291,8 +287,6 @@ class ChoresCog(Cog):
             return
         await channel.send("Successfully added Chore!")
 
-        return
-
     @commands.command(name='finished_chore',
                       description="Mark a chore as complete.",
                       aliases=['done', 'complete', 'finished'],
@@ -314,7 +308,6 @@ class ChoresCog(Cog):
                 return
 
             q: list = self.session.query(Assignment).filter(
-                # Assignment.id == param,
                 Assignment.chore_id == param,
                 Assignment.completionDate.is_(None)
             ).all()
@@ -323,7 +316,7 @@ class ChoresCog(Cog):
                 await ctx.message.channel.send(content="No chore of that ID, or that chore is already complete!")
                 return
             if len(q) > 1:
-                # What. This should literally never happen.
+                # What. This should literally never happen, since the id is a unique primary key.
                 await ctx.message.channel.send(
                     content="That ID gave more than one result! This doesn't make sense! \r\n"
                             "Abir Vandergriff#6507 needs learn how to program!"
@@ -331,6 +324,10 @@ class ChoresCog(Cog):
                 raise ValueError
             for assignment in q:
                 channel = self.bot.get_channel(int(assignment.chore.channel))
+
+                if channel != ctx.message.channel:
+                    await ctx.message.channel.send(content="That ID is not available on this channel!")
+                    return
 
                 if sender != assignment.person.name:
                     await channel.send(content="Hey " +
@@ -346,6 +343,8 @@ class ChoresCog(Cog):
                 self.session.commit()
 
                 await channel.send(content="Thanks for doing your part, " + str(sender))
+        else:
+            await ctx.message.channel.send(content="This isn't implemented right now. Use the ID entry instead!")
 
     @commands.command(hidden=True)
     async def refresh_db(self, ctx):
@@ -401,6 +400,121 @@ class ChoresCog(Cog):
                                                                  assignment.person.name)
 
         await ctx.message.channel.send(content=message)
+
+    @commands.command(name='change_chore', description="Change an existing chore.", aliases=['change'],
+                      help="Must have parameter:\r\n"
+                           "{chore id} : Put just after the command. Specifies the chore to change.\r\n"
+                           "Optional parameter, although there should be at least one: \r\n"
+                           "-chore={choreName} : "
+                           "The new title for the chore. It can be as simple"
+                           "or complex as you want, and doesn't have to be unique.\r\n"
+                           "-valid people={Tags for people} : "
+                           "Tag the people who can do this chore. Seperate with commas. This is an inclusive "
+                           "list, so if they're not in this list, but they are on the chore, they will be "
+                           "removed. "
+                           "For example; 'valid people=@Shel, @Emma, @Mariah, @Nathan "
+                           "Please do not tag @Everyone! \r\n"
+                           "-frequency={Whole number} : "
+                           "How often the chore needs done, in days.\r\n"
+                           "-desc={description of chore} : "
+                           "For more complex chores, give a description so the assignee "
+                           "knows how to do it! \r\n",
+                      usage="{chore id} "
+                            "(-chore name={name to recognize the chore by} "
+                            "-valid people=@{person1}, @{person2} "
+                            "-frequency={frequency in days} "
+                            "-desc={chore description})")
+    async def change_chore(self, ctx: discord.ext.commands.Context):
+        channel: discord.ext.commands.Context.channel = ctx.message.channel
+
+        command_input = ctx.message.content[len(ctx.invoked_with) + 1:].lstrip()  # Strip leading spaces just in case.
+
+        # We should really have at least one input, otherwise we're just wasting resources.
+        if command_input.find('-') == -1:
+            await channel.send(content="You haven't told me what to change! Use command '!help change_chore' for "
+                                       "info on how to use this command!")
+            return
+
+        chore_id = command_input[:command_input.find('-')].lstrip().rstrip()
+        command_input = command_input[command_input.find('-'):]
+
+        # Parse command args into a dictionary
+        # Content of command, with actual command stripped.
+        params: dict = parse_args(
+            command_input
+        )
+
+        if params.get('chore'):
+            params['chore name'] = params['chore']
+
+        if not params.get('chore name') and not params.get('valid people') and not params.get('frequency'):
+            await channel.send(content="Your change parameter is wrong! Use command '!help change_chore' for "
+                                       "info on how to use this command!")
+            return
+
+        chore: Chore = self.session.query(Chore).filter(
+            Chore.id == chore_id
+        ).one()
+
+        if not chore:
+            await channel.send(content="Could not find chore matching that id!")
+            return
+
+        if params.get('chore name'):
+            chore.choreName = params['chore name']
+        if params.get('valid people'):
+            errcheckmsg = "Please give me people as tags so I can notify them when they've been assigned a chore. " \
+                          "Also do not tag @Everyone!"
+            if isinstance(params['valid people'], list):
+                for person_tag in range(len(params['valid people'])):
+                    if not params['valid people'][person_tag].startswith('<@'):
+                        await channel.send(content=errcheckmsg)
+                        return
+            else:
+                if not params['valid people'].startswith('<@!'):
+                    await channel.send(content=errcheckmsg)
+                    return
+
+            # Ensure people passed in exist in DB.
+            people = []
+            try:
+                if not isinstance(params['valid people'], list):
+                    person = Person()
+                    person.name = params['valid people']
+                    people.append(self.query_and_add_person(person))
+                else:
+                    for i in range(len(params['valid people'])):
+                        person = Person()
+                        person.name = params['valid people'][i]
+                        people.append(self.query_and_add_person(person))
+            except sqlalchemy.exc.SQLAlchemyError:
+                await channel.send("Something went wrong! Couldn't validate tagged people for database!")
+                return
+            chore.validPersons = people
+        if params.get('frequency'):
+            chore.frequency = params['frequency']
+        if params.get('desc'):
+            chore.desc = params['desc']
+
+        try:
+            self.session.commit()
+        except sqlalchemy.exc.SQLAlchemyError:
+            await channel.send("Something went wrong!")
+            return
+        await channel.send(f"Successfully changed Chore {chore_id}!")
+
+    """
+    command ideas:
+        !replace_user - Takes two tag parameters. First one is the one being replaced, second is the replacer.
+            Useful for DB maintenance of many chores at once, mostly because Scott took Emma's chores while she was
+            away at the treatment facility for her eating disorder.
+        !reassign_chore - Reassigns the chore on the same criteria as assign_chore(). Probably just abstract the 
+            method at some point in the logic.
+        !invite - Respond with the helper invite link. Probably just useful for me.
+        !who_has - Takes a chore id, sends a message saying who has it. Probably check against chore names
+            if the parameter is a string.
+        !chore_settings - Returns the settings of a chore, queried from the database
+    """
 
     def query_and_add_person(self, person: Person):
         try:

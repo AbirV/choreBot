@@ -1,13 +1,21 @@
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.schema import MetaData
 from sqlalchemy.orm import relationship
 from sqlalchemy import *
 from datetime import datetime
+import sys
 
 
 Base = declarative_base()
 meta: MetaData = Base.metadata
-meta.schema = 'helper'
+
+testing = False
+for arg in sys.argv:
+    if arg == 'testing':
+        testing = True
+        print("Loading test helper schema")
+        meta.schema = 'helpertest'
+if not testing:
+    meta.schema = 'helper'
 
 people_chore_association = Table('peoplechoreassociation', meta,
                                  Column('chore_id', Integer, ForeignKey('chores.id')),
