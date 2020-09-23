@@ -1,1 +1,0 @@
-mysql+pymysql://admin:07081997@localhost:3306
