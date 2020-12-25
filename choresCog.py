@@ -9,7 +9,7 @@ from discord.ext import commands, tasks
 from discord.ext.commands import Cog
 
 from lib.util import parse_args, sync_time
-from ORM.tables import Chore, Person, Assignment
+from orm.tables import Chore, Person, Assignment
 
 
 async def param_none_error_check(ctx: discord.ext.commands.context,
@@ -58,6 +58,7 @@ class ChoresCog(Cog):
         # Query finds all chores, outer joining most recent Assignment of that chore.
         # Should allow us to check if a chore is due for reassignment.
         '''
+        Query: 
         select * from chores 
         left outer join assignments a on a.chore_id = chores.id
         where
@@ -87,38 +88,55 @@ class ChoresCog(Cog):
                     assignment.completionDate <= (datetime.utcnow() - timedelta(days=chore.frequency)):
                 #     Recorded completion  before or on       now   - (frequency) days
 
-                persons = []
-                # create a list of people who can do this chore.
-                for p in chore.validPersons:
-                    persons.append(p.id)
-
-                if len(persons) == 1:
-                    next_person = self.session.query(Person).filter(Person.id.in_(persons)).all()
-                    next_person_index = random.randint(0, len(next_person) - 1)
-                    next_person = next_person[next_person_index]
-
+                if len(chore.validPersons) == 1:
+                    next_person = chore.validPersons[0]
                 else:
+                    persons = []
+                    # create a list of people who can do this chore.
+                    for p in chore.validPersons:
+                        persons.append(p.id)
+
+                    # choose the next person to do the chore. The person should rotate so assignment is even.
+                    '''
+                    query:
+                    
+                    select *
+                    from chores c
+                    left join assignments a on c.id = a.chore_id 
+                    where
+                          c.id = \\chore we're looking at\\
+                          and a.completedBy_id is not null
+                    order by a.id desc
+                    limit \\number of valid people, minus 1\\
+                    '''
+                    # noinspection PyComparisonWithNone
+                    last_persons_ids: list = self.session.query(Chore, a).outerjoin(a, a.chore_id == Chore.id).filter(
+                            Chore.id == assignment.chore_id,
+                            a.completedBy != None
+                        ).order_by(a.id.desc()).limit(len(persons) - 1).all()
+
                     # choose the next person to do the chore. Make sure to exclude last person who did it.
                     '''
+                    query:
                     select * from person p where
                         p.id in (\\external list of valid persons\\) 
                         and
                         p.id != \\prior assignment\\.person.id
                     '''
-                    next_person = self.session.query(Person).filter(
-                        Person.id.in_(persons),
-                        Person.id != assignment.completedBy_id
+                    next_person_ls: list = self.session.query(Person).filter(
+                        Person.id.notin_(last_persons_ids)
                     ).all()
-                    next_person_index = random.randint(0, len(next_person) - 1)
+                    next_person_index = random.randint(0, len(next_person_ls) - 1)
                     next_person = next_person[next_person_index]
+
             elif assignment is None:
                 # in this case, create a list of all people who can do this chore
                 persons = []
                 for p in chore.validPersons:
                     persons.append(p.id)
                 # choose who will do this chore next
-                next_person = self.session.query(Person).filter(Person.id.in_(persons)).all()
-                next_person_index = random.randint(0, len(next_person) - 1)
+                next_person_ls: list = self.session.query(Person).filter(Person.id.in_(persons)).all()
+                next_person_index = random.randint(0, len(next_person_ls) - 1)
                 next_person = next_person[next_person_index]
 
             # if there is no next person, pass this loop
@@ -313,7 +331,8 @@ class ChoresCog(Cog):
             ).all()
 
             if len(q) == 0:
-                await ctx.message.channel.send(content="No chore of that ID, or that chore is already complete!")
+                await ctx.message.channel.send(content="No chore of that ID, or that chore is not currently "
+                                                       "assigned!")
                 return
             if len(q) > 1:
                 # What. This should literally never happen, since the id is a unique primary key.
@@ -505,6 +524,8 @@ class ChoresCog(Cog):
 
     """
     command ideas:
+        !delete_chore - This one is necessary. Removed valid people from a chore that didn't need done anymore, and that
+            really broke the assignment loop when it came time for it to be assigned again.
         !replace_user - Takes two tag parameters. First one is the one being replaced, second is the replacer.
             Useful for DB maintenance of many chores at once, mostly because Scott took Emma's chores while she was
             away at the treatment facility for her eating disorder.
@@ -513,7 +534,7 @@ class ChoresCog(Cog):
         !invite - Respond with the helper invite link. Probably just useful for me.
         !who_has - Takes a chore id, sends a message saying who has it. Probably check against chore names
             if the parameter is a string.
-        !chore_settings - Returns the settings of a chore, queried from the database
+        !chore_settings or !info - Returns the settings of a chore, queried from the database
     """
 
     def query_and_add_person(self, person: Person):

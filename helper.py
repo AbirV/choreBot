@@ -12,7 +12,7 @@ token = open("resources/APIKey.txt", "r").readline()
 @bot.event
 async def on_ready():
     # build DB connection
-    from ORM import tables
+    from orm import tables
     print("SQLAlchemy Version: {}".format(sqlalchemy.__version__))  # Mostly for debug if necessary
 
     engine = sqlalchemy.create_engine(open("resources/mysqlEngine.txt", "r").readline(), pool_recycle=3600, echo=False)

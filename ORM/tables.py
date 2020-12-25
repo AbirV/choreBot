@@ -7,6 +7,7 @@ import sys
 
 Base = declarative_base()
 meta: MetaData = Base.metadata
+meta.schema = 'helper'
 
 testing = False
 for arg in sys.argv:
@@ -14,8 +15,6 @@ for arg in sys.argv:
         testing = True
         print("Loading test helper schema")
         meta.schema = 'helpertest'
-if not testing:
-    meta.schema = 'helper'
 
 people_chore_association = Table('peoplechoreassociation', meta,
                                  Column('chore_id', Integer, ForeignKey('chores.id')),
